@@ -51,20 +51,19 @@ if ! adb shell pm list packages 2>/dev/null | grep -q "$DEV_CLIENT_PACKAGE"; the
     echo -e "${YELLOW}⚠️  Dev client not installed${NC}"
     echo -e "${YELLOW}You need to build and install the dev client first.${NC}"
     echo ""
-    echo -e "${GREEN}Recommended (fast, uses cache):${NC}"
+    echo -e "${GREEN}Building locally (recommended):${NC}"
     echo -e "${GREEN}  npm run android:build${NC}"
-    echo -e "${GREEN}  or: eas build:dev --platform android${NC}"
     echo ""
-    echo -e "${YELLOW}Alternative (full build):${NC}"
-    echo -e "${YELLOW}  eas build --profile development --platform android${NC}"
+    echo -e "${YELLOW}Or use cloud build (slower):${NC}"
+    echo -e "${YELLOW}  npm run android:build:eas${NC}"
     echo ""
     read -p "Would you like to build and install now? (y/n) " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}Building dev client (this may take a few minutes)...${NC}"
-        eas build:dev --platform android
+        echo -e "${YELLOW}Building dev client locally (this may take a few minutes)...${NC}"
+        npm run android:build
         
-        # Check again after build
+        # Check again after build (npx expo run:android installs automatically)
         if ! adb shell pm list packages 2>/dev/null | grep -q "$DEV_CLIENT_PACKAGE"; then
             echo -e "${RED}Failed to install dev client. Please install manually.${NC}"
             exit 1

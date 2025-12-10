@@ -108,6 +108,8 @@ export default function RootLayout() {
       // Handle custom scheme: kortix://auth/callback
       if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
         console.log('📧 Auth callback received, processing...');
+        console.log('📱 Platform:', Platform.OS);
+        console.log('🔗 Full URL:', url);
 
         try {
           // Extract hash fragment first to check for errors

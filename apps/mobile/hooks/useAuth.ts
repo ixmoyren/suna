@@ -258,10 +258,16 @@ export function useAuth() {
         }
       }
 
-      // Force mobile redirect URL (not web Site URL)
-      const redirectTo = 'kortix://auth/callback';
+      // Use makeRedirectUri for proper deep link handling on Android/iOS
+      const redirectTo = Platform.OS === 'android' 
+        ? makeRedirectUri({
+            scheme: 'kortix',
+            path: 'auth/callback',
+          })
+        : 'kortix://auth/callback';
 
       console.log('📊 Redirect URL:', redirectTo);
+      console.log('📱 Platform:', Platform.OS);
 
       // Get OAuth URL from Supabase
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -288,6 +294,19 @@ export function useAuth() {
       }
 
       console.log('🌐 Opening OAuth URL in browser');
+      console.log('🔗 OAuth URL (first 200 chars):', data.url.substring(0, 200));
+      console.log('🔗 OAuth URL contains redirect_uri:', data.url.includes('redirect_uri'));
+      
+      // Extract and log the redirect_uri from the OAuth URL for debugging
+      try {
+        const urlObj = new URL(data.url);
+        const redirectUri = urlObj.searchParams.get('redirect_uri');
+        console.log('🔗 Redirect URI in OAuth URL:', redirectUri);
+        console.log('🔗 Expected redirect URI:', redirectTo);
+        console.log('🔗 Redirect URIs match:', redirectUri === redirectTo || redirectUri === encodeURIComponent(redirectTo));
+      } catch (e) {
+        console.warn('⚠️ Could not parse OAuth URL:', e);
+      }
       
       // Prevent multiple simultaneous OAuth sessions
       if (oauthSessionActiveRef.current) {
@@ -306,72 +325,54 @@ export function useAuth() {
         // Small delay to ensure cleanup completes
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Open OAuth URL in in-app browser
-        const result = await WebBrowser.openAuthSessionAsync(
-          data.url,
-          redirectTo
-        );
+        // Open OAuth URL in in-app browser modal (like Apple Sign In)
+        // Use openBrowserAsync with FULL_SCREEN for native in-app experience
+        const result = await WebBrowser.openBrowserAsync(data.url, {
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+          showTitle: false,
+          controlsColor: Platform.OS === 'ios' ? '#000000' : '#FFFFFF',
+          enableBarCollapsing: false,
+          // Android-specific options
+          ...(Platform.OS === 'android' && {
+            showInRecents: false,
+          }),
+        });
 
         console.log('📊 WebBrowser result:', result);
 
-        if (result.type === 'success' && result.url) {
-          const url = result.url;
-          console.log('✅ OAuth redirect received:', url);
+        // When using openBrowserAsync, the redirect happens via deep link handler
+        // The browser will dismiss when OAuth provider redirects to kortix://auth/callback
+        // We need to wait for the deep link handler to process the callback
+        if (result.type === 'dismiss') {
+          console.log('📱 WebBrowser dismissed - waiting for deep link handler to process callback...');
+          console.log('📱 Platform:', Platform.OS);
           
-          // Check for access_token in URL fragment (implicit flow)
-          if (url.includes('access_token=')) {
-            console.log('✅ Access token found in URL, setting session');
+          // Wait for the deep link handler to process the callback
+          // Retry checking session multiple times as deep link processing can take time
+          let sessionFound = false;
+          for (let attempt = 0; attempt < 15; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 300));
             
-            // Extract tokens from URL fragment
-            const hashParams = new URLSearchParams(url.split('#')[1] || '');
-            const accessToken = hashParams.get('access_token');
-            const refreshToken = hashParams.get('refresh_token');
-            
-            if (accessToken && refreshToken) {
-              // Set the session with the tokens
-              const { data: sessionData, error: sessionError } = 
-                await supabase.auth.setSession({
-                  access_token: accessToken,
-                  refresh_token: refreshToken,
-                });
-
-              if (sessionError) {
-                console.error('❌ Session error:', sessionError.message);
-                setError({ message: sessionError.message });
-                setAuthState((prev) => ({ ...prev, isLoading: false }));
-                oauthSessionActiveRef.current = false;
-                return { success: false, error: sessionError };
-              }
-
-              console.log('✅ OAuth sign in successful');
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+              console.log(`✅ OAuth sign in successful via deep link handler (attempt ${attempt + 1})`);
+              sessionFound = true;
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
-              return { success: true, data: sessionData };
+              return { success: true, data: { session, user: session.user } };
+            }
+            
+            if (attempt < 14) {
+              console.log(`⏳ Waiting for session... (attempt ${attempt + 1}/15)`);
             }
           }
           
-          // Check for code in query params (PKCE flow)
-          const urlObj = new URL(url);
-          const code = urlObj.searchParams.get('code');
-          
-          if (code) {
-            console.log('✅ OAuth code received, exchanging for session');
-            
-            const { data: sessionData, error: sessionError } = 
-              await supabase.auth.exchangeCodeForSession(code);
-
-            if (sessionError) {
-              console.error('❌ Session exchange error:', sessionError.message);
-              setError({ message: sessionError.message });
-              setAuthState((prev) => ({ ...prev, isLoading: false }));
-              oauthSessionActiveRef.current = false;
-              return { success: false, error: sessionError };
-            }
-
-            console.log('✅ OAuth sign in successful');
+          // If no session after waiting, it might have been cancelled or failed
+          if (!sessionFound) {
+            console.log('⚠️ No session found after dismiss - user may have cancelled or deep link not processed');
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             oauthSessionActiveRef.current = false;
-            return { success: true, data: sessionData };
+            return { success: false, error: { message: 'Authentication cancelled or failed' } };
           }
         } else if (result.type === 'cancel') {
           console.log('⚠️ OAuth cancelled by user');
@@ -380,7 +381,8 @@ export function useAuth() {
           return { success: false, error: { message: 'Sign in cancelled' } };
         }
 
-        console.log('❌ OAuth failed - no tokens found');
+        // This shouldn't happen with openBrowserAsync, but handle it just in case
+        console.log('❌ OAuth failed - unexpected result type:', result.type);
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         oauthSessionActiveRef.current = false;
         return { success: false, error: { message: 'Authentication failed' } };

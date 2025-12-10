@@ -5,7 +5,7 @@ import { AudioLines, CornerDownLeft, Paperclip, X, Loader2 } from 'lucide-react-
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData } from 'react-native';
+import { Keyboard, Pressable, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -332,7 +332,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       style={containerStyle}
       {...props}
     >
-      <View className="absolute inset-0" />
       <View className="p-4 flex-1">
         {isRecording ? (
           <RecordingMode
@@ -501,29 +500,30 @@ const NormalMode = React.memo(({
 }: NormalModeProps) => (
   <>
     <View className="flex-1 mb-12">
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <TextInput
-          ref={textInputRef}
-          value={value}
-          onChangeText={onChangeText}
-          onFocus={() => {
-            if (!isAuthenticated) {
-              textInputRef.current?.blur();
-            }
-          }}
-          placeholder={effectivePlaceholder}
-          placeholderTextColor={placeholderTextColor}
-          multiline
-          scrollEnabled={false}
-          editable={!isDisabled}
-          onContentSizeChange={handleContentSizeChange}
-          className="text-foreground text-base"
-          style={textInputStyle}
-        />
-      </ScrollView>
+      <TextInput
+        ref={textInputRef}
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={() => {
+          if (!isAuthenticated) {
+            textInputRef.current?.blur();
+          }
+        }}
+        placeholder={effectivePlaceholder}
+        placeholderTextColor={placeholderTextColor}
+        multiline
+        scrollEnabled={true}
+        editable={!isDisabled}
+        onContentSizeChange={handleContentSizeChange}
+        className="text-foreground text-base"
+        style={textInputStyle}
+        keyboardType="default"
+        autoCorrect={true}
+        autoCapitalize="sentences"
+        blurOnSubmit={false}
+        returnKeyType="default"
+        textContentType="none"
+      />
     </View>
 
     <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
@@ -573,6 +573,7 @@ const NormalMode = React.memo(({
           )}
         </AnimatedPressable>
       </View>
+      
     </View>
   </>
 ));
