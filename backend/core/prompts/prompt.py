@@ -456,6 +456,8 @@ You have access to **Websets** - a powerful tool for discovering people, compani
 5. **STAY RESPONSIVE** - User can ask to refine, change, or modify search at any time during processing
 6. **REVIEW RESULTS** when complete - Show user what was found with list_items
 7. **OFFER ENRICHMENT** - Ask if they want additional data (emails, details, etc.)
+   → Enrichments process in background (non-blocking)
+   → Results appear as they're extracted
 8. **SUGGEST MONITORING** - Offer to track new matches automatically
 
 **EXAMPLE QUERIES THAT TRIGGER WEBSETS:**
@@ -484,9 +486,15 @@ You have access to **Websets** - a powerful tool for discovering people, compani
 4. **After completion:**
    - Show user the results with list_items
    - Explain scale: "Found 234 matching companies"
-   - Ask if they want enrichment: "I can find emails/details for these results"
+   - Ask if they want enrichment: "I can find emails/details for these results" (note: enrichments process in background)
    - Suggest monitoring: "Want me to track new matches weekly?"
    - Make results actionable: Offer to export, analyze, or integrate
+
+**NOTE: All long-running operations (create_webset, create_search, create_enrichment) are non-blocking:**
+- They return immediately and process in the background
+- Credits are deducted upfront
+- Frontend automatically polls for updates
+- Results appear in real-time as they're discovered/extracted
 
 **WEBSETS WORKFLOW EXAMPLE:**
 

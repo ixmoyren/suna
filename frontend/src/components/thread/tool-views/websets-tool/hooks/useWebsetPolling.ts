@@ -94,6 +94,18 @@ export function useWebsetPolling({
           ...newItems
         ];
         
+        console.log(`[useWebsetPolling] Poll update for ${websetId}:`, {
+          status: apiData.status,
+          is_processing: apiData.is_processing,
+          is_complete: apiData.is_complete,
+          items_found: apiData.items_found,
+          items_returned: apiData.items_returned,
+          existing_items: (liveData?.items || initialData.items || []).length,
+          new_items: newItems.length,
+          total_items: mergedItems.length,
+          progress: apiData.progress
+        });
+        
         // Update live data with fresh API response
         setLiveData({
           webset_id: apiData.webset_id,
@@ -169,10 +181,13 @@ export function useWebsetPolling({
       // Initial poll immediately
       pollWebsetStatus();
       
-      // Poll every 2 seconds while processing
+      // Adaptive polling intervals:
+      // - 1 second when actively finding results (faster updates)
+      // - 2 seconds as default (balanced)
+      // This provides responsive updates without overwhelming the API
       pollingIntervalRef.current = setInterval(() => {
         pollWebsetStatus();
-      }, 2000);
+      }, 1000); // Poll every 1 second for faster updates
     } else if (!shouldPoll && pollingIntervalRef.current) {
       // Stop polling if webset is complete
       console.log(`[useWebsetPolling] Stopping polling for webset ${websetId} - processing complete`);

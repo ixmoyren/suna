@@ -69,9 +69,10 @@ async def poll_webset_status(
         # Extract progress info
         progress = None
         search_status = None
+        enrichment_status = None
         if webset.searches and len(webset.searches) > 0:
             s = webset.searches[0]
-            search_status = s.status
+            search_status = _status_to_str(s.status)
             if hasattr(s, 'progress'):
                 progress = {
                     "found": getattr(s.progress, 'found', 0),
@@ -80,6 +81,12 @@ async def poll_webset_status(
                     "time_left": getattr(s.progress, 'time_left', None)
                 }
         
+        # Check enrichment status (enrichments can also be processing)
+        if webset.enrichments and len(webset.enrichments) > 0:
+            # Get the most recent enrichment status
+            latest_enrichment = webset.enrichments[-1]
+            enrichment_status = _status_to_str(latest_enrichment.status)
+        
         # Format items if requested
         items = []
         if include_items and hasattr(webset, 'items') and webset.items:
@@ -87,26 +94,40 @@ async def poll_webset_status(
                 formatted_item = _format_item(item)
                 items.append(formatted_item)
         
-        # Determine processing state
-        is_processing = webset.status in ["running", "pending"] or (
+        # Convert status to string
+        status_str = _status_to_str(webset.status)
+        
+        # Determine processing state - check both search and enrichment status
+        is_processing = status_str in ["running", "pending"] or (
             search_status and search_status in ["running", "pending"]
+        ) or (
+            enrichment_status and enrichment_status in ["running", "pending"]
         )
-        is_complete = webset.status == "idle" and (
+        is_complete = status_str == "idle" and (
             not search_status or search_status == "completed"
+        ) and (
+            not enrichment_status or enrichment_status == "completed"
         )
         
         # Generate message
-        message = _get_status_message(webset.status, progress, is_complete)
+        message = _get_status_message(status_str, progress, is_complete)
         
         logger.debug(
-            f"Poll webset {webset_id}: status={webset.status}, "
+            f"Poll webset {webset_id}: status={status_str}, "
             f"found={progress.get('found', 0) if progress else 0}, "
             f"completion={progress.get('completion', 0) if progress else 100}%"
         )
         
+        # Update message if enrichment is processing
+        if enrichment_status and enrichment_status in ["running", "pending"]:
+            if message and "complete" not in message.lower():
+                message = f"{message} • Enrichment processing"
+            elif not message:
+                message = "Enrichment processing in background"
+        
         return WebsetStatusResponse(
             webset_id=webset.id,
-            status=webset.status,
+            status=status_str,
             search_status=search_status,
             is_processing=is_processing,
             is_complete=is_complete,
@@ -122,6 +143,20 @@ async def poll_webset_status(
     except Exception as e:
         logger.error(f"Failed to poll webset status: {repr(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to poll webset status: {str(e)}")
+
+
+def _status_to_str(status) -> str:
+    """Convert status enum/object to string for JSON serialization"""
+    if status is None:
+        return None
+    if isinstance(status, str):
+        return status
+    # Handle enum objects - try to get the value
+    if hasattr(status, 'value'):
+        return status.value
+    if hasattr(status, 'name'):
+        return status.name.lower()
+    return str(status).split('.')[-1] if '.' in str(status) else str(status)
 
 
 def _format_item(item) -> Dict[str, Any]:
@@ -180,18 +215,20 @@ def _format_item(item) -> Dict[str, Any]:
 def _get_status_message(status: str, progress: Optional[Dict], is_complete: bool) -> str:
     """Generate a human-readable status message"""
     if is_complete:
-        found = progress.get("found", 0) if progress else 0
+        found = int(progress.get("found", 0)) if progress else 0
         return f"Search complete! Found {found} matching results."
     
     if status in ["running", "pending"]:
         if progress:
-            found = progress.get("found", 0)
-            completion = progress.get("completion", 0)
+            found = int(progress.get("found", 0))
+            completion = int(progress.get("completion", 0))
             time_left = progress.get("time_left")
-            msg = f"Searching... {found} results found ({completion}% complete)"
+            if found == 0:
+                return "Processing search"
+            msg = f"Processing... {found} results found ({completion}% complete)"
             if time_left:
-                msg += f" - ~{time_left}s remaining"
+                msg += f" • ~{int(time_left)}s remaining"
             return msg
-        return "Starting search..."
+        return "Processing search"
     
     return f"Status: {status}"

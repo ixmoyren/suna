@@ -191,16 +191,17 @@ def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_ke
     setup_provider_router(api_key, api_base)
     logger.debug(f"Configured OpenAI-compatible provider with custom API base")
 
-def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]], tool_choice: str) -> None:
+def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]], tool_choice: str, model_name: str) -> None:
     """Add tools configuration to parameters."""
     if tools is None:
         return
     
     params.update({
         "tools": tools,
-        "tool_choice": tool_choice
+        "tool_choice": tool_choice,
+        "parallel_tool_calls": True  # Enable parallel tool calling for all models
     })
-    # logger.debug(f"Added {len(tools)} tools to API parameters")
+    # logger.debug(f"Added {len(tools)} tools to API parameters with parallel_tool_calls=True")
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -279,7 +280,13 @@ async def make_llm_api_call(
     
     # Apply additional configurations
     _configure_openai_compatible(params, model_name, api_key, api_base)
-    _add_tools_config(params, tools, tool_choice)
+    _add_tools_config(params, tools, tool_choice, resolved_model_name)
+    
+    if "messages" in params and isinstance(params["messages"], list):
+        params["messages"] = [
+            {k: v for k, v in msg.items() if k != "message_id"}
+            for msg in params["messages"]
+        ]
     
     # Final safeguard: Re-apply stop sequences
     if stop is not None:

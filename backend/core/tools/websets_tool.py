@@ -96,15 +96,22 @@ Creative types (examples):
    → list_items to see what was found
    → Refine query if needed based on results
    
-5. **ENRICH** with custom data
+5. **ENRICH** with custom data (non-blocking, processes in background)
    → "Find CEO email and LinkedIn for each company"
    → "Get years of experience and skills for each person"
+   → Enrichments process in background - results appear as they're extracted
+   → Credits are deducted upfront, enrichment runs asynchronously
    
-6. **MONITOR** for ongoing discovery
+6. **ADD SEARCHES** to existing websets (non-blocking, processes in background)
+   → Add additional searches to expand or refine results
+   → Each search processes in background independently
+   → Credits deducted upfront, results appear as they're discovered
+   
+7. **MONITOR** for ongoing discovery
    → Set up daily/weekly alerts for new matches
    → Stay updated as new entities appear
    
-7. **MANAGE** your collections
+8. **MANAGE** your collections
    → All websets tracked in thread
    → Access anytime with external_id
 
@@ -112,44 +119,49 @@ Creative types (examples):
 
 - Start with count=10-50 to validate query, then scale to 100s-1000s
 - Use external_id for easy reference: "sf_engineers_2025", "yc_batch_w25"
-- Specify criteria: location, funding stage, skills, experience level
+- Criteria are optional: You can specify 0, 1, 2, 3, 4, or 5 criteria (maximum 5). If omitted, criteria are auto-generated from your query. Each criterion description must be 1-1000 characters.
 - Review results before enriching (enrichments cost per item)
 - Use monitors for ongoing research needs (recruiting pipelines, lead gen)
 - Export results or integrate with your CRM/ATS
 
 **📝 EXAMPLE QUERIES:**
 
-Startup Discovery:
+Note: The `criteria` parameter is completely optional. You can provide 0, 1, 2, 3, 4, or 5 criteria (maximum 5). If omitted, criteria are auto-generated from your query. Each criterion description must be 1-1000 characters.
+
+Startup Discovery (with 2 criteria):
 create_webset(
   query="AI startups in San Francisco with Series A funding in the last year",
   entity_type="company",
   count=100,
-  criteria=["Founded after 2020", "Has AI/ML in product"],
+  criteria=["Founded after 2020", "Has AI/ML in product"],  # Optional: 2 criteria
   external_id="sf_ai_startups_2025"
 )
 
-Executive Search:
+Executive Search (no criteria - auto-generated):
 create_webset(
   query="CTOs at enterprise SaaS companies with 500+ employees",
   entity_type="person",
   count=50,
   enrichment_description="LinkedIn profile URL, years of experience, previous companies",
   external_id="cto_prospects"
+  # criteria omitted - will be auto-generated from query
 )
 
-Academic Research:
+Academic Research (no criteria):
 create_webset(
   query="Recent papers on transformer architectures published in 2024-2025",
   entity_type="research_paper",
   count=100,
   external_id="transformer_research"
+  # criteria omitted - will be auto-generated
 )
 
-GitHub Discovery:
+GitHub Discovery (with 1 criterion):
 create_webset(
   query="GitHub repos with 1000+ stars focused on AI agents",
   entity_type="custom",
   count=200,
+  criteria=["Primary language: Python"],  # Optional: 1 criterion
   enrichment_description="Star count, primary language, top contributors",
   external_id="ai_agent_repos"
 )
@@ -177,9 +189,15 @@ create_webset(
 4. **After completion:**
    - Always explain what Websets found and show sample results
    - Mention scale: "Found 234 matching companies"
-   - Offer enrichment: "I can find emails/details for these results"
+   - Offer enrichment: "I can find emails/details for these results" (note: enrichments process in background)
    - Suggest monitoring: "Want me to track new matches weekly?"
    - Make results actionable: Offer to export, analyze, or integrate
+
+**NOTE: Long-running operations (create_webset, create_search, create_enrichment) all process in the background.**
+- Credits are deducted upfront
+- Operations return immediately with status/progress
+- Frontend automatically polls for updates
+- Results appear in real-time as they're discovered/extracted
 """
 )
 class WebsetsTool(Tool):
@@ -476,7 +494,8 @@ class WebsetsTool(Tool):
                     "criteria": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Additional search criteria. Auto-generated if omitted. Examples: ['Founded after 2020', 'Has AI/ML in product']"
+                        "maxItems": 5,
+                        "description": "Optional additional search criteria to refine results. Can be 0, 1, 2, 3, 4, or 5 criteria (maximum 5). If omitted or empty, criteria will be auto-generated from the query. Each criterion description must be 1-1000 characters. Examples: ['Founded after 2020', 'Has AI/ML in product', 'Located in San Francisco']"
                     },
                     "enrichment_description": {
                         "type": "string",
@@ -530,8 +549,26 @@ class WebsetsTool(Tool):
             if entity_type:
                 search_params["entity"] = {"type": entity_type}
             
-            if criteria:
-                search_params["criteria"] = [{"description": c} for c in criteria]
+            # Criteria is optional - can be 0, 1, 2, 3, 4, or 5 criteria (max 5 per Exa API)
+            # If provided (even if empty list), use it; otherwise let API auto-generate
+            if criteria is not None and len(criteria) > 0:
+                if len(criteria) > 5:
+                    return self.fail_response(
+                        f"Maximum 5 criteria allowed. You provided {len(criteria)} criteria. "
+                        "Please reduce to 5 or fewer criteria."
+                    )
+                # Validate each criterion description length (1-1000 chars per Exa API)
+                for i, criterion in enumerate(criteria):
+                    if not criterion or len(criterion.strip()) == 0:
+                        return self.fail_response(
+                            f"Criterion {i+1} is empty. Each criterion description must be 1-1000 characters."
+                        )
+                    if len(criterion) > 1000:
+                        return self.fail_response(
+                            f"Criterion {i+1} exceeds 1000 characters (length: {len(criterion)}). "
+                            "Each criterion description must be 1-1000 characters."
+                        )
+                search_params["criteria"] = [{"description": c.strip()} for c in criteria]
             
             search_params["recall"] = True  # Get estimate of total matches
             
@@ -1083,7 +1120,8 @@ class WebsetsTool(Tool):
                     "criteria": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Additional search criteria"
+                        "maxItems": 5,
+                        "description": "Optional additional search criteria. Can be 0, 1, 2, 3, 4, or 5 criteria (maximum 5). If omitted or empty, criteria will be auto-generated from the query. Each criterion description must be 1-1000 characters."
                     },
                     "behavior": {
                         "type": "string",
@@ -1105,13 +1143,38 @@ class WebsetsTool(Tool):
         criteria: Optional[List[str]] = None,
         behavior: str = "append"
     ) -> ToolResult:
-        """Add additional search to existing webset"""
+        """Add additional search to existing webset (non-blocking, processes in background)"""
         if not self.exa_client:
             return self.fail_response("Websets is not available. EXA_API_KEY is not configured.")
         
         thread_id, user_id = await self._get_current_thread_and_user()
         
+        if config.ENV_MODE != EnvMode.LOCAL and (not thread_id or not user_id):
+            return self.fail_response(
+                "No active session context for billing. This tool requires an active agent session."
+            )
+        
         try:
+            # Calculate and deduct credits BEFORE creating search (charge upfront)
+            credits = self._calculate_credits('search', result_count=count)
+            
+            if config.ENV_MODE == EnvMode.LOCAL:
+                logger.info("Running in LOCAL mode - skipping billing")
+                cost_str = f"{credits} credits (LOCAL - not charged)"
+            else:
+                credits_deducted = await self._deduct_credits(
+                    user_id,
+                    credits,
+                    f"Search added to webset: {count} results",
+                    thread_id
+                )
+                if not credits_deducted:
+                    return self.fail_response(
+                        f"Insufficient credits. This search costs {credits} credits. "
+                        "Please add credits to continue."
+                    )
+                cost_str = f"{credits} credits"
+            
             search_params = {
                 "query": query,
                 "count": count,
@@ -1122,51 +1185,64 @@ class WebsetsTool(Tool):
             if entity_type:
                 search_params["entity"] = {"type": entity_type}
             
-            if criteria:
-                search_params["criteria"] = [{"description": c} for c in criteria]
+            # Criteria is optional - can be 0, 1, 2, 3, 4, or 5 criteria (max 5 per Exa API)
+            # If provided (even if empty list), use it; otherwise let API auto-generate
+            if criteria is not None and len(criteria) > 0:
+                if len(criteria) > 5:
+                    return self.fail_response(
+                        f"Maximum 5 criteria allowed. You provided {len(criteria)} criteria. "
+                        "Please reduce to 5 or fewer criteria."
+                    )
+                # Validate each criterion description length (1-1000 chars per Exa API)
+                for i, criterion in enumerate(criteria):
+                    if not criterion or len(criterion.strip()) == 0:
+                        return self.fail_response(
+                            f"Criterion {i+1} is empty. Each criterion description must be 1-1000 characters."
+                        )
+                    if len(criterion) > 1000:
+                        return self.fail_response(
+                            f"Criterion {i+1} exceeds 1000 characters (length: {len(criterion)}). "
+                            "Each criterion description must be 1-1000 characters."
+                        )
+                search_params["criteria"] = [{"description": c.strip()} for c in criteria]
             
+            # Create search (non-blocking - don't wait for completion)
             search = await asyncio.to_thread(
                 self.exa_client.websets.create_search,
                 webset_id=webset_id,
                 params=search_params
             )
             
-            # Wait for completion
-            webset = await asyncio.to_thread(
-                self.exa_client.websets.wait_until_idle,
-                webset_id
-            )
+            # Convert status to string for JSON serialization
+            search_status_str = self._status_to_str(search.status)
             
-            # Calculate and deduct credits
-            credits = self._calculate_credits('search', result_count=count)
-            
-            if config.ENV_MODE != EnvMode.LOCAL and user_id:
-                credits_deducted = await self._deduct_credits(
-                    user_id,
-                    credits,
-                    f"Search added to webset: {count} results",
-                    thread_id
-                )
-                if not credits_deducted:
-                    return self.fail_response(
-                        f"Insufficient credits. This search costs {credits} credits."
-                    )
+            # Return immediately - search processes in background
+            # Frontend can poll webset status to see search progress
+            logger.info(f"Search {search.id} created for webset {webset_id} (status: {search_status_str}, processing in background)")
             
             output = {
                 "search_id": search.id,
                 "webset_id": webset_id,
-                "status": search.status,
+                "status": search_status_str,
                 "query": query,
                 "count": count,
                 "behavior": behavior,
-                "cost_deducted": f"{credits} credits" if config.ENV_MODE != EnvMode.LOCAL else f"{credits} credits (LOCAL)"
+                "cost_deducted": cost_str,
+                "is_processing": search_status_str in ["running", "pending"],
+                "message": "Search added! Processing in background. Results will appear in the webset as they're discovered." if search_status_str in ["running", "pending"] else "Search ready"
             }
             
             return self.success_response(output)
             
         except Exception as e:
             logger.error(f"Failed to create search: {repr(e)}", exc_info=True)
-            return self.fail_response(f"Failed to create search: {str(e)}")
+            error_str = str(e)
+            if "401" in error_str:
+                return self.fail_response("Authentication failed with Exa API. Please check your API key configuration.")
+            elif "400" in error_str:
+                return self.fail_response("Invalid search request. Please check your query and parameters.")
+            else:
+                return self.fail_response(f"Failed to create search: {str(e)}")
     
     @openapi_schema({
         "type": "function",
@@ -1445,47 +1521,41 @@ class WebsetsTool(Tool):
         format: Optional[str] = None,
         options: Optional[List[str]] = None
     ) -> ToolResult:
-        """Create enrichment for webset items"""
+        """Create enrichment for webset items (non-blocking, processes in background)"""
         if not self.exa_client:
             return self.fail_response("Websets is not available. EXA_API_KEY is not configured.")
         
         thread_id, user_id = await self._get_current_thread_and_user()
         
+        if config.ENV_MODE != EnvMode.LOCAL and (not thread_id or not user_id):
+            return self.fail_response(
+                "No active session context for billing. This tool requires an active agent session."
+            )
+        
         try:
-            enrichment_params = CreateEnrichmentParameters(
-                description=description,
-                format=format,
-                options=[{"label": opt} for opt in options] if options else None,
-                metadata={}
-            )
-            
-            enrichment = await asyncio.to_thread(
-                self.exa_client.websets.enrichments.create,
-                webset_id=webset_id,
-                params=enrichment_params
-            )
-            
-            # Wait for completion (enrichments can take minutes)
-            webset = await asyncio.to_thread(
-                self.exa_client.websets.wait_until_idle,
-                webset_id
-            )
-            
-            # Get item count from webset
+            # Get webset first to determine item count for credit calculation
             webset = await asyncio.to_thread(
                 self.exa_client.websets.get,
-                webset_id
+                webset_id,
+                expand=["searches"]
             )
+            
+            # Get item count from webset searches
             item_count = 0
             if webset.searches and len(webset.searches) > 0:
                 first_search = webset.searches[0]
                 if hasattr(first_search, 'progress') and hasattr(first_search.progress, 'found'):
                     item_count = first_search.progress.found
+                elif hasattr(webset, 'items') and webset.items:
+                    item_count = len(webset.items)
             
-            # Calculate and deduct credits
+            # Calculate and deduct credits BEFORE creating enrichment (charge upfront)
             credits = self._calculate_credits('enrichment', enrichment_count=item_count)
             
-            if config.ENV_MODE != EnvMode.LOCAL and user_id:
+            if config.ENV_MODE == EnvMode.LOCAL:
+                logger.info("Running in LOCAL mode - skipping billing")
+                cost_str = f"{credits} credits (LOCAL - not charged)"
+            else:
                 credits_deducted = await self._deduct_credits(
                     user_id,
                     credits,
@@ -1494,26 +1564,57 @@ class WebsetsTool(Tool):
                 )
                 if not credits_deducted:
                     return self.fail_response(
-                        f"Insufficient credits. This enrichment costs {credits} credits ({item_count} items)."
+                        f"Insufficient credits. This enrichment costs {credits} credits ({item_count} items). "
+                        "Please add credits to continue."
                     )
+                cost_str = f"{credits} credits"
+            
+            # Create enrichment parameters
+            enrichment_params = CreateEnrichmentParameters(
+                description=description,
+                format=format,
+                options=[{"label": opt} for opt in options] if options else None,
+                metadata={}
+            )
+            
+            # Create enrichment (non-blocking - don't wait for completion)
+            enrichment = await asyncio.to_thread(
+                self.exa_client.websets.enrichments.create,
+                webset_id=webset_id,
+                params=enrichment_params
+            )
+            
+            # Convert status to string for JSON serialization
+            enrichment_status_str = self._status_to_str(enrichment.status)
+            
+            # Return immediately - enrichment processes in background
+            # Frontend can poll webset status to see enrichment progress
+            logger.info(f"Enrichment {enrichment.id} created for webset {webset_id} (status: {enrichment_status_str}, processing in background)")
             
             output = {
                 "enrichment_id": enrichment.id,
                 "webset_id": webset_id,
-                "status": self._status_to_str(enrichment.status),
-                "title": enrichment.title,
+                "status": enrichment_status_str,
+                "title": getattr(enrichment, 'title', None),
                 "description": description,
-                "format": enrichment.format,
+                "format": getattr(enrichment, 'format', format),
                 "item_count": item_count,
-                "cost_deducted": f"{credits} credits" if config.ENV_MODE != EnvMode.LOCAL else f"{credits} credits (LOCAL)"
+                "cost_deducted": cost_str,
+                "is_processing": enrichment_status_str in ["running", "pending"],
+                "message": "Enrichment created! Processing in background. Results will appear in the webset as they're extracted." if enrichment_status_str in ["running", "pending"] else "Enrichment ready"
             }
             
-            logger.info(f"Created enrichment {enrichment.id} for webset {webset_id}")
             return self.success_response(output)
             
         except Exception as e:
             logger.error(f"Failed to create enrichment: {repr(e)}", exc_info=True)
-            return self.fail_response(f"Failed to create enrichment: {str(e)}")
+            error_str = str(e)
+            if "401" in error_str:
+                return self.fail_response("Authentication failed with Exa API. Please check your API key configuration.")
+            elif "400" in error_str:
+                return self.fail_response("Invalid enrichment request. Please check your description and format.")
+            else:
+                return self.fail_response(f"Failed to create enrichment: {str(e)}")
     
     @openapi_schema({
         "type": "function",

@@ -9,14 +9,13 @@ import { WebsetsProgressBanner } from './WebsetsProgressBanner';
 import { WebsetsEmptyState } from './WebsetsEmptyState';
 import { WebsetsTable } from './WebsetsTable';
 import { WebsetsToolbar } from './WebsetsToolbar';
+import { WebsetItemModal } from './WebsetItemModal';
 
 interface WebsetsBrowserProps {
   data: WebsetData;
   isStreaming: boolean;
   isPolling: boolean;
   items: WebsetItem[];
-  onToggleExpand: (itemId: string) => void;
-  expandedRows: Set<string>;
   searchFilter: string;
   onSearchChange: (value: string) => void;
 }
@@ -26,11 +25,21 @@ export function WebsetsBrowser({
   isStreaming,
   isPolling,
   items,
-  onToggleExpand,
-  expandedRows,
   searchFilter,
   onSearchChange,
 }: WebsetsBrowserProps) {
+  const [selectedItem, setSelectedItem] = useState<WebsetItem | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const handleItemClick = (item: WebsetItem) => {
+    setSelectedItem(item);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedItem(null);
+  };
   // Extract all unique criteria from items' evaluations
   const allCriteria = useMemo(() => {
     const criteriaSet = new Set<string>();
@@ -57,7 +66,8 @@ export function WebsetsBrowser({
   }, [items, searchFilter]);
 
   const showProgressBanner = data.is_processing || isPolling || (isStreaming && !data.is_complete);
-  const showEmptyState = (isStreaming || data.is_processing || isPolling) && items.length === 0 && !data.progress;
+  // Show empty state when processing but no results yet (including when progress shows 0 found)
+  const showEmptyState = (isStreaming || data.is_processing || isPolling) && items.length === 0 && (!data.progress || data.progress.found === 0);
 
   return (
     <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
@@ -74,11 +84,11 @@ export function WebsetsBrowser({
           isProcessing={true}
         />
       ) : filteredItems.length > 0 ? (
-        <ScrollArea className="h-full w-full">
-          <div className={cn("p-4", showProgressBanner && "pt-16")}>
+        <ScrollArea className="h-full">
+          <div className={cn("space-y-4 p-4", showProgressBanner && "pt-16")}>
             {/* Query Summary */}
             {data.query && (
-              <div className="mb-4 p-4 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg">
+              <div className="p-4 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg">
                 <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
                   Query: <span className="font-normal text-zinc-600 dark:text-zinc-400">{data.query}</span>
                 </div>
@@ -102,8 +112,7 @@ export function WebsetsBrowser({
             <WebsetsTable
               items={filteredItems}
               allCriteria={allCriteria}
-              expandedRows={expandedRows}
-              onToggleExpand={onToggleExpand}
+              onItemClick={handleItemClick}
             />
           </div>
         </ScrollArea>
@@ -113,6 +122,13 @@ export function WebsetsBrowser({
           isProcessing={false}
         />
       )}
+
+      {/* Item Detail Modal */}
+      <WebsetItemModal
+        item={selectedItem}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
     </CardContent>
   );
 }

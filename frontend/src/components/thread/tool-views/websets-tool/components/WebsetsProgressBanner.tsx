@@ -30,26 +30,26 @@ export function WebsetsProgressBanner({
           </div>
           <div>
             <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              {message || "Searching the web..."}
+              {message || "Processing search..."}
             </div>
-            {progress && (
+            {progress && progress.found > 0 && (
               <div className="text-xs text-zinc-600 dark:text-zinc-400 font-medium mt-0.5">
-                {progress.found} results found • {progress.completion}% complete
-                {progress.time_left && ` • ~${progress.time_left}s remaining`}
+                {Math.round(progress.found)} results found • {Math.round(progress.completion)}% complete
+                {progress.time_left && ` • ~${Math.round(progress.time_left)}s remaining`}
               </div>
             )}
           </div>
         </div>
-        {progress && (
+        {progress && progress.completion > 0 && (
           <div className="flex items-center gap-3">
             <div className="w-32 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-zinc-900 dark:bg-zinc-100 rounded-full transition-all duration-500"
-                style={{ width: `${progress.completion || 0}%` }}
+                style={{ width: `${Math.round(progress.completion || 0)}%` }}
               />
             </div>
             <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 w-10 tabular-nums">
-              {progress.completion || 0}%
+              {Math.round(progress.completion || 0)}%
             </span>
           </div>
         )}
