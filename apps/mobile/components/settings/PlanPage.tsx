@@ -712,8 +712,8 @@ export function PlanPage({
                   </Text>
                   <Text className="text-sm leading-relaxed text-muted-foreground">
                     {t(
-                      'billing.stripeSubscriberMessage',
-                      'You have a web subscription. Please manage your plan on the web platform where you upgraded.'
+                      'billing.manageOnWeb',
+                      'You have a web subscription. Please visit the web platform to manage your subscription and billing.'
                     )}
                   </Text>
                 </View>

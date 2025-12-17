@@ -172,24 +172,34 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     }
   }, [user, handleSubscriptionUpdate]);
 
+
   // Show button if RevenueCat should be used and is configured
   // We'll handle initialization when the button is clicked if needed
   const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
 
+  // Check if user has Stripe subscription
+  const subscriptionProvider = accountState?.subscription?.provider;
+  const tierKey = accountState?.subscription?.tier_key;
+  const isStripeSubscriber =
+    subscriptionProvider === 'stripe' &&
+    tierKey &&
+    tierKey !== 'free' &&
+    tierKey !== 'none';
+
   // Debug logging to help diagnose button visibility
   useEffect(() => {
     if (visible) {
-      console.log('🔍 [BillingPage] RevenueCat button visibility check:', {
+      console.log('🔍 [BillingPage] Billing provider check:', {
+        provider: subscriptionProvider,
+        tierKey,
+        isStripeSubscriber,
         shouldUseRevenueCat: shouldUseRevenueCat(),
         isRevenueCatConfigured: isRevenueCatConfigured(),
         useRevenueCat,
         platform: Platform.OS,
-        hasIosKey: !!process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
-        hasAndroidKey: !!process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
-        useRevenueCatEnv: process.env.EXPO_PUBLIC_USE_REVENUECAT,
       });
     }
-  }, [visible, useRevenueCat]);
+  }, [visible, subscriptionProvider, tierKey, isStripeSubscriber, useRevenueCat]);
 
   if (!visible) return null;
 
@@ -594,8 +604,8 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                 </AnimatedPressable>
               )}
 
-              {/* RevenueCat Customer Info Portal */}
-              {useRevenueCat && (
+              {/* RevenueCat Customer Info Portal - Only show for RevenueCat subscribers */}
+              {useRevenueCat && !isStripeSubscriber && (
                 <AnimatedPressable
                   onPress={handleCustomerInfo}
                   onPressIn={() => {
@@ -612,6 +622,31 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     {t('billing.customerInfo', 'Customer Info')}
                   </Text>
                 </AnimatedPressable>
+              )}
+
+              {/* Stripe Subscriber Message */}
+              {isStripeSubscriber && (
+                <AnimatedView
+                  entering={FadeIn.duration(400).delay(100)}
+                  className="w-full rounded-[18px] border border-border bg-card p-4"
+                >
+                  <View className="flex-row items-start gap-3">
+                    <View className="rounded-full bg-primary/10 p-2">
+                      <Icon as={AlertCircle} size={16} className="text-primary" strokeWidth={2} />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="mb-1 font-roobert-semibold text-sm text-foreground">
+                        {t('billing.webSubscriptionActive', 'Web Subscription Active')}
+                      </Text>
+                      <Text className="text-xs leading-relaxed text-muted-foreground">
+                        {t(
+                          'billing.manageOnWeb',
+                          'You have a web subscription. Please visit the web platform to manage your subscription and billing.'
+                        )}
+                      </Text>
+                    </View>
+                  </View>
+                </AnimatedView>
               )}
 
             </View>
